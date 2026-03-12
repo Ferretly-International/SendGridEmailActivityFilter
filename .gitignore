@@ -1,0 +1,40 @@
+## Claude Code
+.claude/
+
+## .NET / C#
+
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+.vs/
+*.rsuser
+
+# NuGet
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+packages/
+!**/packages/build/
+
+# Publish profiles
+**/Properties/PublishProfiles/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Sensitive config — never commit real API keys
+# Keep appsettings.json structure in source but exclude overrides with real secrets
+appsettings.*.json
+!appsettings.json
