@@ -7,7 +7,7 @@ A .NET 8 console application that queries [SendGrid's Email Activity API](https:
 - Interactive ANSI console UI via **Spectre.Console**
 - Queries SendGrid's `/v3/messages` endpoint filtered by `to_email`
 - Displays results in a colour-coded table (status, opens, clicks, date)
-- Configuration via `appsettings.json` (API key, result limit)
+- Configuration via `appsettings.json` (API key, result limit — gitignored, never committed)
 
 ## Prerequisites
 
@@ -25,7 +25,13 @@ When creating your API key in the SendGrid dashboard, enable:
 ## Setup
 
 1. Clone this repository.
-2. Open `SendGridEmailActivityFilter/appsettings.json` and replace the placeholder with your API key:
+2. Copy the example config and add your API key:
+
+   ```bash
+   cp SendGridEmailActivityFilter/appsettings.example.json SendGridEmailActivityFilter/appsettings.json
+   ```
+
+   Then edit `appsettings.json` and replace the placeholder:
 
    ```json
    {
@@ -35,6 +41,8 @@ When creating your API key in the SendGrid dashboard, enable:
      }
    }
    ```
+
+   > `appsettings.json` is listed in `.gitignore` and will never be committed. Only `appsettings.example.json` (with no real credentials) is tracked by Git.
 
 3. Build and run:
 
@@ -80,8 +88,9 @@ Results are displayed in a rounded table with columns:
 ```
 SendGridEmailActivityFilter/
 ├── SendGridEmailActivityFilter/
-│   ├── Program.cs           # Application entry point
-│   ├── appsettings.json     # Configuration (add your API key here)
+│   ├── Program.cs                   # Application entry point
+│   ├── appsettings.example.json     # Config template (committed)
+│   ├── appsettings.json             # Your local config with API key (gitignored)
 │   └── SendGridEmailActivityFilter.csproj
 ├── .gitignore
 └── README.md

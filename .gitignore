@@ -35,6 +35,6 @@ packages/
 .DS_Store
 
 # Sensitive config — never commit real API keys
-# Keep appsettings.json structure in source but exclude overrides with real secrets
+appsettings.json
 appsettings.*.json
-!appsettings.json
+!appsettings.example.json
