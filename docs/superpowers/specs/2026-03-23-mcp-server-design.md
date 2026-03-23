@@ -179,7 +179,9 @@ public class SendGridService
 | `ModelContextProtocol` | Core MCP types, tool attributes (`[McpServerToolType]`, `[McpServerTool]`), stdio transport, and DI extensions (`AddMcpServer`, `WithStdioServerTransport`, `WithToolsFromAssembly`) |
 | `Microsoft.Extensions.Hosting` | Generic Host |
 
-> **Version note:** As of this spec's date the latest stable release is `ModelContextProtocol` `1.1.0`. Pin to `1.1.0` explicitly (not a `1.*` wildcard) since the SDK has had breaking API changes between releases. Check NuGet for a newer stable release before implementing. `Microsoft.Extensions.Configuration.Json` is pulled in transitively by `Microsoft.Extensions.Hosting` — no explicit reference needed.
+> **Version note:** As of this spec's date the latest stable release is `ModelContextProtocol` `1.1.0`. Pin to `1.1.0` explicitly (not a `1.*` wildcard) since the SDK has had breaking API changes between releases. Check NuGet for a newer stable release before implementing.
+>
+> `Microsoft.Extensions.Hosting` must be referenced **explicitly** — `ModelContextProtocol 1.1.0` only brings in `Microsoft.Extensions.Hosting.Abstractions` (interfaces) transitively, not the full runtime package. `Microsoft.Extensions.Hosting` requires `Abstractions >= 10.0.3` from the MCP package, so pin `Hosting` to `10.*` (not `8.*`). `Microsoft.Extensions.Configuration.Json` is pulled in transitively via `Microsoft.Extensions.Hosting`'s own dependency chain and does not need a separate reference.
 
 Project reference: `SendGridEmailActivityFilter.Core`
 
@@ -197,7 +199,7 @@ Project reference: `SendGridEmailActivityFilter.Core`
 
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -207,9 +209,11 @@ Project reference: `SendGridEmailActivityFilter.Core`
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
     <None Update="appsettings.example.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 </Project>
@@ -219,6 +223,8 @@ Project reference: `SendGridEmailActivityFilter.Core`
 
 ### `Program.cs`
 
+> **Important:** Do NOT use `Host.CreateDefaultBuilder` for an MCP stdio server. The official MCP C# SDK guidance requires `Host.CreateApplicationBuilder` (or `Host.CreateEmptyApplicationBuilder`) so that no default providers write to stdout before the logging configuration is applied. `CreateDefaultBuilder` uses a callback-based API where providers can be registered before `ConfigureLogging` fires, risking stdout pollution that corrupts the JSON-RPC channel.
+
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -226,45 +232,41 @@ using Microsoft.Extensions.Logging;
 using SendGridEmailActivityFilter.Core;
 using SendGridEmailActivityFilter.Mcp.Tools;
 
-var host = Host.CreateDefaultBuilder(args)
-    // Host.CreateDefaultBuilder already loads appsettings.json and
-    // appsettings.{Environment}.json — no manual AddJsonFile needed.
-    // Note: on dev machines with DOTNET_ENVIRONMENT=Development, the host will
-    // attempt to load appsettings.Development.json. The existing .gitignore rule
-    // appsettings.*.json covers this file; no .gitignore change is needed.
-    .ConfigureLogging(logging =>
-    {
-        // ClearProviders removes all defaults (including the Console provider that
-        // writes to stdout). Re-add Console directed entirely to stderr by setting
-        // LogToStandardErrorThreshold = Trace (meaning all levels go to stderr).
-        // stdout remains exclusively for JSON-RPC messages.
-        logging.ClearProviders();
-        logging.AddConsole(opts =>
-            opts.LogToStandardErrorThreshold = LogLevel.Trace);
-    })
-    .ConfigureServices((ctx, services) =>
-    {
-        var config = ctx.Configuration;
-        var apiKey = config["SendGrid:ApiKey"]
-            ?? throw new InvalidOperationException(
-                "SendGrid:ApiKey missing from appsettings.json");
-        var limit = int.TryParse(config["SendGrid:Limit"], out var l) ? l : 20;
+// Use CreateApplicationBuilder (not CreateDefaultBuilder) for stdio MCP servers.
+// CreateApplicationBuilder uses the newer HostApplicationBuilder fluent API and
+// ensures no providers are registered before we configure logging below.
+var builder = Host.CreateApplicationBuilder(args);
+// appsettings.json and appsettings.{Environment}.json are loaded automatically.
+// DOTNET_ENVIRONMENT defaults to "Production" for published executables; only
+// machines with DOTNET_ENVIRONMENT=Development set will load appsettings.Development.json.
+// The existing .gitignore rule appsettings.*.json covers that file if it is created.
 
-        // SendGridService has primitive constructor parameters (string, int) that
-        // the DI container cannot resolve automatically; use a factory lambda.
-        // Construct HttpClient directly — no IHttpClientFactory needed, keeping the
-        // .csproj free of a Microsoft.Extensions.Http reference.
-        services.AddSingleton(_ => new SendGridService(new HttpClient(), apiKey, limit));
+// Clear all default logging providers (some write to stdout) and re-add Console
+// directed entirely to stderr. LogToStandardErrorThreshold = Trace routes all
+// log levels to stderr, keeping stdout exclusively for JSON-RPC messages.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole(opts =>
+    opts.LogToStandardErrorThreshold = LogLevel.Trace);
 
-        services.AddMcpServer()
-                .WithStdioServerTransport()
-                // Use explicit assembly reference so the scan is resilient to future
-                // refactoring (e.g., if EmailActivityTool moves to a different file).
-                .WithToolsFromAssembly(typeof(EmailActivityTool).Assembly);
-    })
-    .Build();
+var config = builder.Configuration;
+var apiKey = config["SendGrid:ApiKey"]
+    ?? throw new InvalidOperationException(
+        "SendGrid:ApiKey missing from appsettings.json");
+var limit = int.TryParse(config["SendGrid:Limit"], out var l) ? l : 20;
 
-await host.RunAsync();
+// SendGridService has primitive constructor parameters (string, int) that the
+// DI container cannot resolve automatically; use a factory lambda.
+// Construct HttpClient directly — no IHttpClientFactory/Microsoft.Extensions.Http needed.
+builder.Services.AddSingleton(_ => new SendGridService(new HttpClient(), apiKey, limit));
+
+builder.Services
+    .AddMcpServer()
+    .WithStdioServerTransport()
+    // Explicit assembly reference makes the tool scan self-documenting and
+    // independent of the calling-assembly context at the call site.
+    .WithToolsFromAssembly(typeof(EmailActivityTool).Assembly);
+
+await builder.Build().RunAsync();
 // The ModelContextProtocol stdio transport propagates EOF on stdin as a host
 // shutdown signal; no additional CancellationToken wiring is required.
 ```
@@ -481,6 +483,16 @@ dotnet publish SendGridEmailActivityFilter.Mcp -c Release -r win-x64 --self-cont
 ```
 
 Self-contained publish is recommended: the Claude Desktop process may not inherit the user's PATH or have .NET 8 available as a runtime prerequisite.
+
+### Post-publish config setup
+
+After publishing, copy the example config into the publish output directory and populate your API key:
+
+```bash
+copy SendGridEmailActivityFilter.Mcp\appsettings.example.json <publish_output_dir>\appsettings.json
+```
+
+Then edit `<publish_output_dir>\appsettings.json` and set `SendGrid:ApiKey`. This file is separate from the project-level `appsettings.json` used during `dotnet run`; both must exist and contain a valid key. The `CopyToPublishDirectory` directive in the `.csproj` copies the placeholder `appsettings.example.json` to the publish directory — rename/overwrite it with your real config.
 
 ### Claude Desktop config (`claude_desktop_config.json`)
 
