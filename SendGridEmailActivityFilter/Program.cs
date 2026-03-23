@@ -1,7 +1,5 @@
-using System.Net.Http.Headers;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
+using SendGridEmailActivityFilter.Core;
 using Spectre.Console;
 
 var config = new ConfigurationBuilder()
@@ -11,6 +9,9 @@ var config = new ConfigurationBuilder()
 
 var apiKey = config["SendGrid:ApiKey"]
     ?? throw new InvalidOperationException("SendGrid:ApiKey is missing from appsettings.json");
+
+var limitStr = config["SendGrid:Limit"] ?? "20";
+var limit = int.TryParse(limitStr, out var parsedLimit) ? parsedLimit : 20;
 
 AnsiConsole.Write(new FigletText("SendGrid Activity").Color(Color.CornflowerBlue));
 
@@ -22,34 +23,41 @@ if (string.IsNullOrWhiteSpace(email))
     return;
 }
 
-var limitStr = config["SendGrid:Limit"] ?? "20";
-var limit = int.TryParse(limitStr, out var parsedLimit) ? parsedLimit : 20;
+int? days = null;
+// AnsiConsole.Ask<string> rejects empty input; TextPrompt with AllowEmpty() lets user press Enter to skip
+var daysInput = AnsiConsole.Prompt(
+    new TextPrompt<string>("[grey]Days to look back (leave blank for all recent):[/] ")
+        .AllowEmpty());
+if (!string.IsNullOrWhiteSpace(daysInput))
+{
+    if (int.TryParse(daysInput.Trim(), out var parsedDays) && parsedDays > 0)
+        days = parsedDays;
+    else
+        AnsiConsole.MarkupLine("[yellow]Invalid days value — querying without date filter.[/]");
+}
 
 EmailActivityResponse? result = null;
+var apiErrored = false;
 
 await AnsiConsole.Status()
     .Spinner(Spinner.Known.Dots)
     .SpinnerStyle(Style.Parse("cornflowerblue"))
     .StartAsync($"Querying activity for [yellow]{Markup.Escape(email)}[/]...", async ctx =>
     {
-        using var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-        var query = Uri.EscapeDataString($"to_email=\"{email}\"");
-        var url = $"https://api.sendgrid.com/v3/messages?limit={limit}&query={query}";
-
-        var response = await httpClient.GetAsync(url);
-        var body = await response.Content.ReadAsStringAsync();
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            AnsiConsole.MarkupLine($"[red]API error {(int)response.StatusCode}:[/] {Markup.Escape(body)}");
-            return;
+            using var httpClient = new HttpClient();
+            var service = new SendGridService(httpClient, apiKey, limit);
+            result = await service.GetEmailActivityAsync(email, days);
         }
-
-        result = JsonSerializer.Deserialize<EmailActivityResponse>(body);
+        catch (HttpRequestException ex)
+        {
+            apiErrored = true;
+            AnsiConsole.MarkupLine($"[red]API error:[/] {Markup.Escape(ex.Message)}");
+        }
     });
+
+if (apiErrored) return;
 
 if (result?.Messages is not { Length: > 0 } messages)
 {
@@ -102,18 +110,3 @@ foreach (var msg in messages)
 }
 
 AnsiConsole.Write(table);
-
-record EmailActivityResponse(
-    [property: JsonPropertyName("messages")] Message[]? Messages
-);
-
-record Message(
-    [property: JsonPropertyName("msg_id")]          string? MsgId,
-    [property: JsonPropertyName("from_email")]      string? FromEmail,
-    [property: JsonPropertyName("to_email")]        string? ToEmail,
-    [property: JsonPropertyName("subject")]         string? Subject,
-    [property: JsonPropertyName("status")]          string? Status,
-    [property: JsonPropertyName("opens_count")]     int?    OpensCount,
-    [property: JsonPropertyName("clicks_count")]    int?    ClicksCount,
-    [property: JsonPropertyName("last_event_time")] string? LastEventTime
-);

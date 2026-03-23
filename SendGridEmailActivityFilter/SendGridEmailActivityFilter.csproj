@@ -8,8 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Version 10.0.4 carried forward from existing project -->
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.4" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SendGridEmailActivityFilter.Core\SendGridEmailActivityFilter.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
