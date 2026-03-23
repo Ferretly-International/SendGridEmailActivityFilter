@@ -19,7 +19,7 @@ public class SendGridService
     }
 
     public async Task<EmailActivityResponse?> GetEmailActivityAsync(
-        string email, int? days = null)
+        string email, int? days = null, CancellationToken cancellationToken = default)
     {
         var filter = $"to_email=\"{email}\"";
         if (days.HasValue)
@@ -34,7 +34,7 @@ public class SendGridService
                   $"?limit={Math.Min(_limit, 1000)}" +
                   $"&query={Uri.EscapeDataString(filter)}";
 
-        var response = await _httpClient.GetAsync(url);
+        var response = await _httpClient.GetAsync(url, cancellationToken);
         var body = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
