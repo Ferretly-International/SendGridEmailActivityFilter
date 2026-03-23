@@ -1,11 +1,13 @@
 # SendGrid Email Activity Filter
 
-A .NET 8 console application that queries [SendGrid's Email Activity API](https://docs.sendgrid.com/api-reference/e-mail-activity/filter-messages-by-specific-parameters) for a given recipient address and displays the results in a formatted table.
+A .NET 8 console application and MCP server that query [SendGrid's Email Activity API](https://docs.sendgrid.com/api-reference/e-mail-activity/filter-messages-by-specific-parameters) for a given recipient address.
 
 ## Features
 
 - Interactive ANSI console UI via **Spectre.Console**
+- MCP server — ask Claude Chat "pull up the email logs for soandso@there.com for the last week"
 - Queries SendGrid's `/v3/messages` endpoint filtered by `to_email`
+- Optional date filter: look back N days
 - Displays results in a colour-coded table (status, opens, clicks, date)
 - Configuration via `appsettings.json` (API key, result limit — gitignored, never committed)
 
@@ -22,7 +24,9 @@ When creating your API key in the SendGrid dashboard, enable:
 
 > Note: The Email Activity API (`/v3/messages`) is available on paid SendGrid plans. Free plans may have limited or no access.
 
-## Setup
+---
+
+## Console app setup
 
 1. Clone this repository.
 2. Copy the example config and add your API key:
@@ -51,24 +55,76 @@ When creating your API key in the SendGrid dashboard, enable:
    dotnet run
    ```
 
+---
+
+## MCP server setup
+
+The MCP server lets Claude Chat (or any MCP-compatible client) query email activity via natural language.
+
+### 1. Configure
+
+```bash
+cp SendGridEmailActivityFilter.Mcp/appsettings.example.json SendGridEmailActivityFilter.Mcp/appsettings.json
+```
+
+Edit `SendGridEmailActivityFilter.Mcp/appsettings.json` and set your API key.
+
+### 2. Publish (self-contained)
+
+```bash
+dotnet publish SendGridEmailActivityFilter.Mcp -c Release -r win-x64 --self-contained
+```
+
+Self-contained publish is recommended so Claude Desktop can launch the executable without needing .NET on its PATH.
+
+### 3. Copy config to publish output
+
+After publishing, copy your config to the publish directory:
+
+```bash
+copy SendGridEmailActivityFilter.Mcp\appsettings.example.json <publish_output_dir>\appsettings.json
+```
+
+Then edit `<publish_output_dir>\appsettings.json` and set `SendGrid:ApiKey`.
+
+### 4. Register with Claude Desktop
+
+Add an entry to `claude_desktop_config.json` (find it via Claude Desktop → Settings → Developer):
+
+```json
+{
+  "mcpServers": {
+    "sendgrid-activity": {
+      "command": "C:\\full\\path\\to\\publish\\sendgrid-mcp.exe"
+    }
+  }
+}
+```
+
+Use a full absolute path. The executable is named `sendgrid-mcp.exe`.
+
+Restart Claude Desktop. You can then ask things like:
+- *"Pull up the email logs for user@example.com"*
+- *"Show me SendGrid activity for user@example.com for the last 7 days"*
+
+---
+
 ## Configuration
+
+Both the console app and MCP server use the same config keys:
 
 | Key | Description | Default |
 |-----|-------------|---------|
 | `SendGrid:ApiKey` | Your SendGrid API key | *(required)* |
 | `SendGrid:Limit` | Max number of messages to return (1–1000) | `20` |
 
-## Usage
+---
+
+## Usage (console)
 
 ```
- ____                    _  ____      _     _      _        _   _       _ _
-/ ___|  ___ _ __   __ _| |/ ___|_ __(_) __| |    / \   ___| |_(_)_   _(_) |_ _   _
-\___ \ / _ \ '_ \ / _` | | |  _| '__| |/ _` |   / _ \ / __| __| \ \ / / | __| | | |
- ___) |  __/ | | | (_| | | |_| | |  | | (_| |  / ___ \ (__| |_| |\ V /| | |_| |_| |
-|____/ \___|_| |_|\__,_|_|\____|_|  |_|\__,_| /_/   \_\___|\__|_| \_/ |_|\__|\__, |
-                                                                               |___/
-
 Email address to query: user@example.com
+Days to look back (leave blank for all recent):
 ```
 
 Results are displayed in a rounded table with columns:
@@ -83,15 +139,28 @@ Results are displayed in a rounded table with columns:
 | Clicks | Number of click events |
 | Message ID | SendGrid message identifier |
 
+---
+
 ## Project structure
 
 ```
 SendGridEmailActivityFilter/
-├── SendGridEmailActivityFilter/
-│   ├── Program.cs                   # Application entry point
-│   ├── appsettings.example.json     # Config template (committed)
-│   ├── appsettings.json             # Your local config with API key (gitignored)
+├── SendGridEmailActivityFilter.sln
+├── SendGridEmailActivityFilter.Core/        # Shared service + models
+│   ├── SendGridService.cs
+│   ├── Models.cs
+│   └── SendGridEmailActivityFilter.Core.csproj
+├── SendGridEmailActivityFilter/             # Console app
+│   ├── Program.cs
+│   ├── appsettings.example.json            # Config template (committed)
+│   ├── appsettings.json                    # Your local config (gitignored)
 │   └── SendGridEmailActivityFilter.csproj
+├── SendGridEmailActivityFilter.Mcp/         # MCP server
+│   ├── Program.cs
+│   ├── Tools/EmailActivityTool.cs
+│   ├── appsettings.example.json            # Config template (committed)
+│   ├── appsettings.json                    # Your local config (gitignored)
+│   └── SendGridEmailActivityFilter.Mcp.csproj
 ├── .gitignore
 └── README.md
 ```
