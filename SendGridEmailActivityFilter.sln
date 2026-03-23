@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SendGridEmailActivityFilter", "SendGridEmailActivityFilter\SendGridEmailActivityFilter.csproj", "{9BB25C50-93D5-4EBC-AA81-112B82609A71}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SendGridEmailActivityFilter.Core", "SendGridEmailActivityFilter.Core\SendGridEmailActivityFilter.Core.csproj", "{A0310B3D-9695-4738-A6FD-ADCE9E4489FD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SendGridEmailActivityFilter.Mcp", "SendGridEmailActivityFilter.Mcp\SendGridEmailActivityFilter.Mcp.csproj", "{2885C4F9-3708-474A-BD83-DB7B80BDD03E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9BB25C50-93D5-4EBC-AA81-112B82609A71}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9BB25C50-93D5-4EBC-AA81-112B82609A71}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9BB25C50-93D5-4EBC-AA81-112B82609A71}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9BB25C50-93D5-4EBC-AA81-112B82609A71}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A0310B3D-9695-4738-A6FD-ADCE9E4489FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A0310B3D-9695-4738-A6FD-ADCE9E4489FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A0310B3D-9695-4738-A6FD-ADCE9E4489FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A0310B3D-9695-4738-A6FD-ADCE9E4489FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2885C4F9-3708-474A-BD83-DB7B80BDD03E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2885C4F9-3708-474A-BD83-DB7B80BDD03E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2885C4F9-3708-474A-BD83-DB7B80BDD03E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2885C4F9-3708-474A-BD83-DB7B80BDD03E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
