@@ -35,7 +35,7 @@ public class SendGridService
                   $"&query={Uri.EscapeDataString(filter)}";
 
         var response = await _httpClient.GetAsync(url, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException(

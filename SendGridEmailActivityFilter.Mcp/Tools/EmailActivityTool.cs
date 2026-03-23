@@ -22,6 +22,10 @@ public class EmailActivityTool(SendGridService sendGrid)
         {
             result = await sendGrid.GetEmailActivityAsync(email, days, cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+            throw; // Let the MCP framework handle client disconnects
+        }
         catch (HttpRequestException ex)
         {
             return $"Error querying SendGrid: {ex.Message}";
