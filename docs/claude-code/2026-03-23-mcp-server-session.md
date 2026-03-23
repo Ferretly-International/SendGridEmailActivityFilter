@@ -69,7 +69,7 @@ The four automated spec review passes caught issues that would have caused real 
 
 | Issue | Impact if missed |
 |---|---|
-| Duplicate constructor pattern (`primary ctor + explicit ctor with `: this()`) | Compile error |
+| Duplicate constructor: primary ctor on class signature plus an explicit ctor chaining to `: this()` | Compile error |
 | `services.AddHttpClient()` requires `Microsoft.Extensions.Http` not in the dep graph | Compile error |
 | `Host.CreateDefaultBuilder` writes to stdout before logging config fires | JSON-RPC stream corruption at runtime |
 | `Microsoft.Extensions.Hosting 8.*` conflicts with MCP package's `>= 10.0.3` floor | NuGet restore failure or runtime mismatch |
