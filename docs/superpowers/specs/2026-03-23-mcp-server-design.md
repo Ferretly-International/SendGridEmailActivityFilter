@@ -18,47 +18,79 @@ Add a Model Context Protocol (MCP) stdio server so that Claude Chat (or any MCP-
 
 - HTTP/SSE transport (stdio only)
 - Authentication beyond the existing API key in `appsettings.json`
-- Exposing limit as a tool parameter (it remains an operational config ceiling)
+- Exposing `limit` as a tool parameter (it remains an operational config ceiling)
 
 ---
 
 ## Solution Structure
 
 ```
-SendGridEmailActivityFilter/
+SendGridEmailActivityFilter/          ← repo root
 ├── SendGridEmailActivityFilter.sln
 ├── SendGridEmailActivityFilter.Core/
 │   ├── SendGridService.cs
 │   ├── Models.cs
 │   └── SendGridEmailActivityFilter.Core.csproj
-├── SendGridEmailActivityFilter/               (existing console app)
+├── SendGridEmailActivityFilter/
 │   ├── Program.cs
-│   ├── appsettings.json                       (gitignored)
+│   ├── appsettings.json              (gitignored)
 │   ├── appsettings.example.json
 │   └── SendGridEmailActivityFilter.csproj
-└── SendGridEmailActivityFilter.Mcp/           (new)
+└── SendGridEmailActivityFilter.Mcp/
     ├── Program.cs
     ├── Tools/EmailActivityTool.cs
-    ├── appsettings.json                       (gitignored)
+    ├── appsettings.json              (gitignored)
     ├── appsettings.example.json
     └── SendGridEmailActivityFilter.Mcp.csproj
 ```
+
+### Solution scaffolding commands
+
+All commands run from the **repo root** (`SendGridEmailActivityFilter/` in the file system):
+
+```bash
+dotnet new sln
+dotnet sln add SendGridEmailActivityFilter/SendGridEmailActivityFilter.csproj
+dotnet new classlib -n SendGridEmailActivityFilter.Core
+dotnet sln add SendGridEmailActivityFilter.Core/SendGridEmailActivityFilter.Core.csproj
+dotnet new console -n SendGridEmailActivityFilter.Mcp
+dotnet sln add SendGridEmailActivityFilter.Mcp/SendGridEmailActivityFilter.Mcp.csproj
+```
+
+`dotnet new classlib` and `dotnet new console` run from the repo root, producing sibling directories alongside the existing console app folder — matching the diagram above.
 
 ---
 
 ## Section 1 — Core Library (`SendGridEmailActivityFilter.Core`)
 
 ### Purpose
-Houses all SendGrid API interaction and shared models. Has no console or MCP dependencies.
+Houses all SendGrid API interaction and shared models. Has no console, MCP, or configuration-framework dependencies.
 
-### Dependencies
-- `System.Net.Http` (inbox)
-- `System.Text.Json` (inbox)
+### `SendGridEmailActivityFilter.Core.csproj`
 
-### Models.cs
-Move the two records from the console app's `Program.cs`:
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+```
+
+`System.Net.Http` and `System.Text.Json` are inbox in .NET 8 — no NuGet references needed.
+
+### `Models.cs`
+
+Namespace: `SendGridEmailActivityFilter.Core`
+
+`System.Text.Json.Serialization` is **not** in the default implicit usings for a class library and must be added explicitly.
 
 ```csharp
+using System.Text.Json.Serialization;
+
+namespace SendGridEmailActivityFilter.Core;
+
 public record EmailActivityResponse(
     [property: JsonPropertyName("messages")] Message[]? Messages
 );
@@ -75,76 +107,239 @@ public record Message(
 );
 ```
 
-### SendGridService.cs
+### `SendGridService.cs`
+
+Namespace: `SendGridEmailActivityFilter.Core`
 
 ```csharp
-public class SendGridService(HttpClient httpClient, string apiKey, int limit)
+using System.Net.Http.Headers;
+using System.Text.Json;
+
+namespace SendGridEmailActivityFilter.Core;
+
+public class SendGridService
 {
+    private readonly HttpClient _httpClient;
+    private readonly int _limit;
+
+    public SendGridService(HttpClient httpClient, string apiKey, int limit)
+    {
+        _httpClient = httpClient;
+        _limit = limit;
+        // Set headers once on the shared instance; both callers reuse this HttpClient.
+        httpClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", apiKey);
+        httpClient.DefaultRequestHeaders.Accept
+            .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+    }
+
     public async Task<EmailActivityResponse?> GetEmailActivityAsync(
-        string email, int? days = null) { ... }
+        string email, int? days = null)
+    {
+        var filter = $"to_email=\"{email}\"";
+        if (days.HasValue)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-days.Value)
+                                        .ToString("yyyy-MM-dd HH:mm:ss");
+            // SendGrid SGQL supports > (strictly greater-than) for last_event_time.
+            // The TIMESTAMP keyword and "yyyy-MM-dd HH:mm:ss" format are required.
+            filter += $" AND last_event_time>TIMESTAMP \"{cutoff}\"";
+        }
+
+        var url = $"https://api.sendgrid.com/v3/messages" +
+                  $"?limit={Math.Min(_limit, 1000)}" +
+                  $"&query={Uri.EscapeDataString(filter)}";
+
+        var response = await _httpClient.GetAsync(url);
+        var body = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException(
+                $"SendGrid API returned {(int)response.StatusCode}: {body}",
+                null,
+                response.StatusCode);
+
+        return JsonSerializer.Deserialize<EmailActivityResponse>(body);
+    }
 }
 ```
 
-**Query building:**
-- Base filter: `to_email="<email>"`
-- If `days` is provided: append `AND last_event_time>="<UTC ISO8601>"` using `DateTime.UtcNow.AddDays(-days.Value)`
-- `limit` passed as query-string parameter (max 1000 per SendGrid API)
-- `Authorization: Bearer <apiKey>` header
+**Error contract:** `GetEmailActivityAsync` throws `HttpRequestException` (with status code and body in the message) on any non-2xx response. Callers are responsible for catching and surfacing this to the user.
 
-The `HttpClient` is injected so each caller controls its lifetime.
+**Header placement:** Both `Authorization` and `Accept` headers are set on `httpClient.DefaultRequestHeaders` in the constructor. The `HttpClient` instance is shared (singleton in MCP, `using`-scoped in console) so this is safe — the headers are set once and reused for every call.
 
 ---
 
 ## Section 2 — MCP Server (`SendGridEmailActivityFilter.Mcp`)
 
-### Dependencies
-- `ModelContextProtocol` (official C# SDK, 1.x)
-- `Microsoft.Extensions.Hosting`
-- `Microsoft.Extensions.Configuration.Json`
-- `SendGridEmailActivityFilter.Core` (project reference)
+### NuGet packages
 
-### Program.cs
-Uses .NET Generic Host with stdio transport:
+| Package | Purpose |
+|---|---|
+| `ModelContextProtocol` | Core MCP types, tool attributes (`[McpServerToolType]`, `[McpServerTool]`), stdio transport, and DI extensions (`AddMcpServer`, `WithStdioServerTransport`, `WithToolsFromAssembly`) |
+| `Microsoft.Extensions.Hosting` | Generic Host |
+
+> **Version note:** As of this spec's date the latest stable release is `ModelContextProtocol` `1.1.0`. Pin to `1.1.0` explicitly (not a `1.*` wildcard) since the SDK has had breaking API changes between releases. Check NuGet for a newer stable release before implementing. `Microsoft.Extensions.Configuration.Json` is pulled in transitively by `Microsoft.Extensions.Hosting` — no explicit reference needed.
+
+Project reference: `SendGridEmailActivityFilter.Core`
+
+### `SendGridEmailActivityFilter.Mcp.csproj`
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>sendgrid-mcp</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SendGridEmailActivityFilter.Core\SendGridEmailActivityFilter.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="appsettings.example.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>
+```
+
+`<AssemblyName>sendgrid-mcp</AssemblyName>` produces `sendgrid-mcp.exe`, distinct from the console app's `SendGridEmailActivityFilter.exe`.
+
+### `Program.cs`
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using SendGridEmailActivityFilter.Core;
+using SendGridEmailActivityFilter.Mcp.Tools;
+
 var host = Host.CreateDefaultBuilder(args)
-    .ConfigureAppConfiguration(b => b.AddJsonFile("appsettings.json", optional: false))
+    // Host.CreateDefaultBuilder already loads appsettings.json and
+    // appsettings.{Environment}.json — no manual AddJsonFile needed.
+    // Note: on dev machines with DOTNET_ENVIRONMENT=Development, the host will
+    // attempt to load appsettings.Development.json. The existing .gitignore rule
+    // appsettings.*.json covers this file; no .gitignore change is needed.
+    .ConfigureLogging(logging =>
+    {
+        // ClearProviders removes all defaults (including the Console provider that
+        // writes to stdout). Re-add Console directed entirely to stderr by setting
+        // LogToStandardErrorThreshold = Trace (meaning all levels go to stderr).
+        // stdout remains exclusively for JSON-RPC messages.
+        logging.ClearProviders();
+        logging.AddConsole(opts =>
+            opts.LogToStandardErrorThreshold = LogLevel.Trace);
+    })
     .ConfigureServices((ctx, services) =>
     {
-        // Register HttpClient + SendGridService
-        services.AddHttpClient<SendGridService>(...);
+        var config = ctx.Configuration;
+        var apiKey = config["SendGrid:ApiKey"]
+            ?? throw new InvalidOperationException(
+                "SendGrid:ApiKey missing from appsettings.json");
+        var limit = int.TryParse(config["SendGrid:Limit"], out var l) ? l : 20;
+
+        // SendGridService has primitive constructor parameters (string, int) that
+        // the DI container cannot resolve automatically; use a factory lambda.
+        // Construct HttpClient directly — no IHttpClientFactory needed, keeping the
+        // .csproj free of a Microsoft.Extensions.Http reference.
+        services.AddSingleton(_ => new SendGridService(new HttpClient(), apiKey, limit));
+
         services.AddMcpServer()
                 .WithStdioServerTransport()
-                .WithToolsFromAssembly();
+                // Use explicit assembly reference so the scan is resilient to future
+                // refactoring (e.g., if EmailActivityTool moves to a different file).
+                .WithToolsFromAssembly(typeof(EmailActivityTool).Assembly);
     })
     .Build();
 
 await host.RunAsync();
+// The ModelContextProtocol stdio transport propagates EOF on stdin as a host
+// shutdown signal; no additional CancellationToken wiring is required.
 ```
 
-Logging is directed to stderr (Generic Host default when stdout is the MCP transport) so it never corrupts the JSON-RPC stream.
+### `Tools/EmailActivityTool.cs`
 
-### Tools/EmailActivityTool.cs
+Namespace: `SendGridEmailActivityFilter.Mcp.Tools`
 
 ```csharp
+using System.ComponentModel;
+using System.Text;
+using ModelContextProtocol.Server;
+using SendGridEmailActivityFilter.Core;
+
+namespace SendGridEmailActivityFilter.Mcp.Tools;
+
 [McpServerToolType]
 public class EmailActivityTool(SendGridService sendGrid)
 {
     [McpServerTool]
-    [Description("Query SendGrid email activity for a recipient address.")]
+    [Description("Query SendGrid email activity for a recipient email address. " +
+                 "Returns a table of recent messages including delivery status, " +
+                 "open and click counts.")]
     public async Task<string> GetEmailActivity(
         [Description("Recipient email address to look up")] string email,
-        [Description("Number of days to look back (optional; omit for all recent)")] int? days = null)
+        [Description("Number of days to look back. Optional — omit for most recent messages up to the configured limit.")] int? days = null)
     {
-        var result = await sendGrid.GetEmailActivityAsync(email, days);
-        // format as Markdown table and return
+        EmailActivityResponse? result;
+        try
+        {
+            result = await sendGrid.GetEmailActivityAsync(email, days);
+        }
+        catch (HttpRequestException ex)
+        {
+            return $"Error querying SendGrid: {ex.Message}";
+        }
+
+        if (result?.Messages is not { Length: > 0 } messages)
+            return $"No messages found for {email}.";
+
+        // Markdown table — plain text only, no ANSI colour codes.
+        // Columns: Date, From, Subject, Status, Opens, Clicks, Message ID
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {messages.Length} message(s) for {email}:");
+        sb.AppendLine();
+        sb.AppendLine("| Date | From | Subject | Status | Opens | Clicks | Message ID |");
+        sb.AppendLine("|---|---|---|---|---|---|---|");
+
+        foreach (var msg in messages)
+        {
+            var date = msg.LastEventTime is not null
+                       && DateTime.TryParse(msg.LastEventTime, out var dt)
+                ? dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                : msg.LastEventTime ?? "";
+
+            sb.AppendLine(
+                $"| {date} " +
+                $"| {Escape(msg.FromEmail)} " +
+                $"| {Escape(msg.Subject)} " +
+                $"| {msg.Status ?? "unknown"} " +
+                $"| {msg.OpensCount ?? 0} " +
+                $"| {msg.ClicksCount ?? 0} " +
+                $"| {Escape(msg.MsgId)} |");
+        }
+
+        return sb.ToString();
     }
+
+    // Escape pipe characters to avoid breaking the Markdown table structure.
+    private static string Escape(string? s) => (s ?? "").Replace("|", "\\|");
 }
 ```
 
-**Return format:** Markdown table (renders cleanly in Claude Chat; no additional formatting step needed by the model).
+### `appsettings.example.json`
 
-### appsettings.example.json
 ```json
 {
   "SendGrid": {
@@ -159,24 +354,108 @@ public class EmailActivityTool(SendGridService sendGrid)
 }
 ```
 
+### `.gitignore` coverage
+
+The existing root `.gitignore` has three relevant rules (non-path-anchored, so they match in any subdirectory):
+- `appsettings.json` — ignores both new `appsettings.json` files
+- `appsettings.*.json` — would also catch `appsettings.example.json` and `appsettings.Development.json`
+- `!appsettings.example.json` — un-ignores `appsettings.example.json` in all subdirectories
+
+Net result: `appsettings.json` and `appsettings.Development.json` are ignored; `appsettings.example.json` is tracked. **No `.gitignore` changes are required.**
+
 ---
 
 ## Section 3 — Console App Changes
 
-The console app is refactored to use `SendGridService` from Core. Changes are minimal:
+### `SendGridEmailActivityFilter.csproj` — updated `<ItemGroup>` blocks
 
-- Remove inline `HttpClient` block, query-building logic, and the two record definitions
-- Add project reference to `SendGridEmailActivityFilter.Core`
-- Instantiate `SendGridService` directly (no DI host):
-  ```csharp
-  using var httpClient = new HttpClient();
-  var service = new SendGridService(httpClient, apiKey, limit);
-  var result = await service.GetEmailActivityAsync(email, days);
-  ```
-- Add optional `days` prompt after the email prompt:
-  > `Days to look back (leave blank for all recent):`
-  Blank input → `null` → no date filter (preserves existing behaviour)
-- Table rendering code is unchanged
+```xml
+<ItemGroup>
+  <!-- Version 10.0.4 carried forward from existing project (targets net8.0; works via
+       backward compatibility but consider downgrading to 8.* in a future cleanup). -->
+  <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.4" />
+  <PackageReference Include="Spectre.Console" Version="0.54.0" />
+</ItemGroup>
+
+<ItemGroup>
+  <ProjectReference Include="..\SendGridEmailActivityFilter.Core\SendGridEmailActivityFilter.Core.csproj" />
+</ItemGroup>
+
+<ItemGroup>
+  <None Update="appsettings.json">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </None>
+</ItemGroup>
+```
+
+`Microsoft.Extensions.Configuration.Json` stays in the console project. It is **not** added to Core.
+
+### `Program.cs` — key changes
+
+**Remove these `using` directives** (no longer used after the refactor):
+- `using System.Net.Http.Headers;`
+- `using System.Text.Json;`
+- `using System.Text.Json.Serialization;`
+
+**Add at the top:**
+```csharp
+using SendGridEmailActivityFilter.Core;
+```
+
+**Remove from `Program.cs`:**
+- The inline `HttpClient` block and query-building code
+- The `EmailActivityResponse` and `Message` record definitions at the bottom
+
+**Add after the email prompt** (days prompt):
+
+```csharp
+int? days = null;
+// AnsiConsole.Ask<string> rejects empty input; use TextPrompt with AllowEmpty()
+// so the user can press Enter to skip the date filter.
+var daysInput = AnsiConsole.Prompt(
+    new TextPrompt<string>("[grey]Days to look back (leave blank for all recent):[/] ")
+        .AllowEmpty());
+if (!string.IsNullOrWhiteSpace(daysInput))
+{
+    if (int.TryParse(daysInput.Trim(), out var parsedDays) && parsedDays > 0)
+        days = parsedDays;
+    else
+        AnsiConsole.MarkupLine("[yellow]Invalid days value — querying without date filter.[/]");
+}
+```
+
+**Replace the inline HTTP block with:**
+
+```csharp
+EmailActivityResponse? result = null;
+var apiErrored = false;
+
+await AnsiConsole.Status()
+    .Spinner(Spinner.Known.Dots)
+    .SpinnerStyle(Style.Parse("cornflowerblue"))
+    .StartAsync($"Querying activity for [yellow]{Markup.Escape(email)}[/]...", async ctx =>
+    {
+        try
+        {
+            using var httpClient = new HttpClient();
+            var service = new SendGridService(httpClient, apiKey, limit);
+            result = await service.GetEmailActivityAsync(email, days);
+        }
+        catch (HttpRequestException ex)
+        {
+            apiErrored = true;
+            AnsiConsole.MarkupLine($"[red]API error:[/] {Markup.Escape(ex.Message)}");
+        }
+    });
+
+if (apiErrored) return;
+```
+
+The `apiErrored` flag prevents falling through to the "no messages found" yellow message after a real API error, which would be misleading.
+
+**`days` validation:** blank → `null` (no date filter, preserves existing behaviour); non-blank but unparseable or `<= 0` → warn and fall back to `null`. No re-prompting.
+
+The table rendering code is unchanged.
 
 ---
 
@@ -184,28 +463,40 @@ The console app is refactored to use `SendGridService` from Core. Changes are mi
 
 | Scenario | Console app | MCP tool |
 |---|---|---|
-| API key missing | Throws `InvalidOperationException` at startup | Same — fails fast at host startup |
-| Non-2xx from SendGrid | Prints red error markup | Returns error string to Claude |
-| No messages found | Yellow "no messages" message | Returns "No messages found for `<email>`." string |
-| Invalid `days` value | Prompt re-asks / ignores invalid input | Parameter is typed `int?` — MCP SDK validates |
+| API key missing | `InvalidOperationException` at startup | Host fails to start |
+| Non-2xx from SendGrid | `HttpRequestException` caught, red error markup, early return via `apiErrored` flag | `HttpRequestException` caught, returns error string |
+| No messages found | Yellow "no messages" message | Returns `"No messages found for <email>."` |
+| `days` blank | `null` passed — no date filter | N/A (optional parameter defaults to `null`) |
+| `days` unparseable / ≤ 0 | Warning, falls back to `null` | MCP SDK validates `int?` at protocol level |
 
 ---
 
-## Registration with Claude
+## Deployment & Registration with Claude
 
-After building the MCP project, the user adds an entry to their Claude Desktop / Claude Chat MCP config:
+### Build
+
+```bash
+# From repo root:
+dotnet publish SendGridEmailActivityFilter.Mcp -c Release -r win-x64 --self-contained
+```
+
+Self-contained publish is recommended: the Claude Desktop process may not inherit the user's PATH or have .NET 8 available as a runtime prerequisite.
+
+### Claude Desktop config (`claude_desktop_config.json`)
 
 ```json
 {
   "mcpServers": {
     "sendgrid-activity": {
-      "command": "path/to/SendGridEmailActivityFilter.Mcp.exe"
+      "command": "C:\\full\\path\\to\\publish\\sendgrid-mcp.exe"
     }
   }
 }
 ```
 
-This should be documented in the README.
+Use a full absolute path. The executable is named `sendgrid-mcp.exe` (via `<AssemblyName>`).
+
+This should be documented in `README.md`.
 
 ---
 
@@ -214,3 +505,4 @@ This should be documented in the README.
 - Unit tests (no testing framework exists in this repo today)
 - Pagination beyond the `Limit` ceiling
 - Additional MCP tools (e.g., get message detail by ID)
+- Linux/macOS deployment (Windows-first project)
