@@ -42,7 +42,7 @@ var apiErrored = false;
 await AnsiConsole.Status()
     .Spinner(Spinner.Known.Dots)
     .SpinnerStyle(Style.Parse("cornflowerblue"))
-    .StartAsync($"Querying activity for [yellow]{Markup.Escape(email)}[/]...", async ctx =>
+    .StartAsync($"Querying activity for [yellow]{Markup.Escape(email)}[/]...", async _ =>
     {
         try
         {
