@@ -72,7 +72,7 @@ Edit `SendGridEmailActivityFilter.Mcp/appsettings.json` and set your API key.
 ### 2. Publish (self-contained)
 
 ```bash
-dotnet publish SendGridEmailActivityFilter.Mcp -c Release -r win-x64 --self-contained
+dotnet publish SendGridEmailActivityFilter.Mcp/SendGridEmailActivityFilter.Mcp.csproj -c Release -r win-x64 --self-contained
 ```
 
 Self-contained publish is recommended so Claude Desktop can launch the executable without needing .NET on its PATH.
