@@ -11,16 +11,45 @@ public class EmailActivityTool(SendGridService sendGrid)
     [McpServerTool]
     [Description("Query SendGrid email activity for a recipient email address. " +
                  "Returns a table of recent messages including delivery status, " +
-                 "open and click counts.")]
+                 "open and click counts. " +
+                 "Provide either 'days' for a rolling lookback, or both 'startDate' and 'endDate' " +
+                 "for a specific date range (maximum 5 days). Date range takes precedence when both are supplied.")]
     public async Task<string> GetEmailActivity(
         [Description("Recipient email address to look up")] string email,
         [Description("Number of days to look back. Optional — omit for most recent messages up to the configured limit.")] int? days = null,
+        [Description("Start of date range to filter by, in yyyy-MM-dd format (e.g. '2025-01-01'). Must be used together with endDate. Range may not exceed 5 days.")] string? startDate = null,
+        [Description("End of date range to filter by, in yyyy-MM-dd format (e.g. '2025-01-05'). Must be used together with startDate. Range may not exceed 5 days.")] string? endDate = null,
         CancellationToken cancellationToken = default)
     {
+        DateTime? parsedStart = null;
+        DateTime? parsedEnd   = null;
+
+        if (startDate is not null || endDate is not null)
+        {
+            if (!DateTime.TryParseExact(startDate, "yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var s))
+                return "Invalid startDate — expected yyyy-MM-dd format.";
+
+            if (!DateTime.TryParseExact(endDate, "yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var e))
+                return "Invalid endDate — expected yyyy-MM-dd format.";
+
+            if (e < s)
+                return "endDate must be on or after startDate.";
+
+            if ((e.Date - s.Date).TotalDays > (int)SendGridService.MaxDateRangeSpan.TotalDays)
+                return $"Date range cannot exceed {(int)SendGridService.MaxDateRangeSpan.TotalDays} days.";
+
+            parsedStart = s;
+            parsedEnd   = e;
+        }
+
         EmailActivityResponse? result;
         try
         {
-            result = await sendGrid.GetEmailActivityAsync(email, days, cancellationToken);
+            result = await sendGrid.GetEmailActivityAsync(email, days, parsedStart, parsedEnd, cancellationToken);
         }
         catch (OperationCanceledException)
         {

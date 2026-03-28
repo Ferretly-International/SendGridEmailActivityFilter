@@ -24,16 +24,70 @@ if (string.IsNullOrWhiteSpace(email))
 }
 
 int? days = null;
-// AnsiConsole.Ask<string> rejects empty input; TextPrompt with AllowEmpty() lets user press Enter to skip
-var daysInput = AnsiConsole.Prompt(
-    new TextPrompt<string>("[grey]Days to look back (leave blank for all recent):[/] ")
-        .AllowEmpty());
-if (!string.IsNullOrWhiteSpace(daysInput))
+DateTime? startDate = null;
+DateTime? endDate = null;
+
+var filterChoice = AnsiConsole.Prompt(
+    new SelectionPrompt<string>()
+        .Title("[grey]Date filter:[/]")
+        .AddChoices("No filter (most recent)", "Days to look back", "Date range"));
+
+if (filterChoice == "Days to look back")
 {
-    if (int.TryParse(daysInput.Trim(), out var parsedDays) && parsedDays > 0)
-        days = parsedDays;
-    else
-        AnsiConsole.MarkupLine("[yellow]Invalid days value — querying without date filter.[/]");
+    var daysInput = AnsiConsole.Prompt(
+        new TextPrompt<string>("[grey]Days to look back:[/] ")
+            .AllowEmpty());
+    if (!string.IsNullOrWhiteSpace(daysInput))
+    {
+        if (int.TryParse(daysInput.Trim(), out var parsedDays) && parsedDays > 0)
+            days = parsedDays;
+        else
+            AnsiConsole.MarkupLine("[yellow]Invalid days value — querying without date filter.[/]");
+    }
+}
+else if (filterChoice == "Date range")
+{
+    const int maxDays = 5;
+    DateTime? parsedStart = null;
+    DateTime? parsedEnd = null;
+
+    while (parsedStart is null)
+    {
+        var input = AnsiConsole.Ask<string>("[grey]Start date (yyyy-MM-dd):[/] ");
+        if (DateTime.TryParseExact(input.Trim(), "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var d))
+            parsedStart = d;
+        else
+            AnsiConsole.MarkupLine("[yellow]Invalid date — use yyyy-MM-dd format.[/]");
+    }
+
+    while (parsedEnd is null)
+    {
+        var input = AnsiConsole.Ask<string>("[grey]End date (yyyy-MM-dd):[/] ");
+        if (!DateTime.TryParseExact(input.Trim(), "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var d))
+        {
+            AnsiConsole.MarkupLine("[yellow]Invalid date — use yyyy-MM-dd format.[/]");
+            continue;
+        }
+        if (d < parsedStart.Value)
+        {
+            AnsiConsole.MarkupLine("[yellow]End date must be on or after start date.[/]");
+            continue;
+        }
+        var span = d.Date - parsedStart.Value.Date;
+        if (span.TotalDays > maxDays)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Range cannot exceed {maxDays} days. Please enter an end date within {maxDays} days of {parsedStart.Value:yyyy-MM-dd}.[/]");
+            continue;
+        }
+        parsedEnd = d;
+    }
+
+    startDate = parsedStart;
+    endDate   = parsedEnd;
 }
 
 EmailActivityResponse? result = null;
@@ -48,7 +102,7 @@ await AnsiConsole.Status()
         {
             using var httpClient = new HttpClient();
             var service = new SendGridService(httpClient, apiKey, limit);
-            result = await service.GetEmailActivityAsync(email, days);
+            result = await service.GetEmailActivityAsync(email, days, startDate, endDate);
         }
         catch (HttpRequestException ex)
         {

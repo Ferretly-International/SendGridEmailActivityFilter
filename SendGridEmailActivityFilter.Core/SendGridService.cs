@@ -18,11 +18,39 @@ public class SendGridService
             .Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 
+    /// <summary>
+    /// Maximum allowed date range span when using startDate/endDate filtering.
+    /// </summary>
+    public static readonly TimeSpan MaxDateRangeSpan = TimeSpan.FromDays(5);
+
     public async Task<EmailActivityResponse?> GetEmailActivityAsync(
-        string email, int? days = null, CancellationToken cancellationToken = default)
+        string email,
+        int? days = null,
+        DateTime? startDate = null,
+        DateTime? endDate = null,
+        CancellationToken cancellationToken = default)
     {
+        if (startDate.HasValue && endDate.HasValue)
+        {
+            var span = endDate.Value.Date - startDate.Value.Date;
+            if (span < TimeSpan.Zero)
+                throw new ArgumentException("End date must be on or after start date.", nameof(endDate));
+            if (span > MaxDateRangeSpan)
+                throw new ArgumentException(
+                    $"Date range cannot exceed {(int)MaxDateRangeSpan.TotalDays} days.", nameof(endDate));
+        }
+
         var filter = $"to_email=\"{email}\"";
-        if (days.HasValue)
+
+        if (startDate.HasValue && endDate.HasValue)
+        {
+            // Convert to UTC for SGQL query; use inclusive bounds covering full days
+            var start = startDate.Value.Date.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            var end   = endDate.Value.Date.AddDays(1).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            filter += $" AND last_event_time>=TIMESTAMP \"{start}\"";
+            filter += $" AND last_event_time<TIMESTAMP \"{end}\"";
+        }
+        else if (days.HasValue)
         {
             var cutoff = DateTime.UtcNow.AddDays(-days.Value)
                                         .ToString("yyyy-MM-dd HH:mm:ss");
