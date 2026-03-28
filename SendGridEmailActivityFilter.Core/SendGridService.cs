@@ -38,6 +38,11 @@ public class SendGridService
         if (!startDate.HasValue && string.IsNullOrWhiteSpace(email))
             throw new ArgumentException("Either email or a date range must be provided.", nameof(email));
 
+        if (startDate.HasValue && (!string.IsNullOrWhiteSpace(email) || days.HasValue))
+            throw new ArgumentException(
+                "Date range filtering is mutually exclusive with email and days — provide one or the other.",
+                !string.IsNullOrWhiteSpace(email) ? nameof(email) : nameof(days));
+
         if (startDate.HasValue && endDate.HasValue)
         {
             var span = endDate.Value.Date - startDate.Value.Date;

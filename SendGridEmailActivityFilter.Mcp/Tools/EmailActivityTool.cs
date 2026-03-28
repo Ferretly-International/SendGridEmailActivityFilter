@@ -46,9 +46,14 @@ public class EmailActivityTool(SendGridService sendGrid)
             if ((e.Date - s.Date).Days + 1 > maxDays)
                 return $"Date range cannot exceed {maxDays} days.";
 
+            if (!string.IsNullOrWhiteSpace(email))
+                return "Date range and email are mutually exclusive — provide one or the other.";
+
+            if (days.HasValue)
+                return "Date range and days lookback are mutually exclusive — provide one or the other.";
+
             parsedStart = s;
             parsedEnd   = e;
-            email = null; // date range queries return all emails in the range
         }
         else if (string.IsNullOrWhiteSpace(email))
         {
