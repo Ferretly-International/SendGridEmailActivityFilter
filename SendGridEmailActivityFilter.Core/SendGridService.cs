@@ -30,12 +30,18 @@ public class SendGridService
         DateTime? endDate = null,
         CancellationToken cancellationToken = default)
     {
+        if (startDate.HasValue != endDate.HasValue)
+            throw new ArgumentException(
+                "Both startDate and endDate must be provided together when filtering by date range.",
+                startDate.HasValue ? nameof(endDate) : nameof(startDate));
+
         if (startDate.HasValue && endDate.HasValue)
         {
             var span = endDate.Value.Date - startDate.Value.Date;
             if (span < TimeSpan.Zero)
                 throw new ArgumentException("End date must be on or after start date.", nameof(endDate));
-            if (span > MaxDateRangeSpan)
+            // +1 converts exclusive span to inclusive day count (e.g. Jan 1–Jan 5 = 5 days)
+            if (span.TotalDays + 1 > MaxDateRangeSpan.TotalDays)
                 throw new ArgumentException(
                     $"Date range cannot exceed {(int)MaxDateRangeSpan.TotalDays} days.", nameof(endDate));
         }
@@ -44,9 +50,11 @@ public class SendGridService
 
         if (startDate.HasValue && endDate.HasValue)
         {
-            // Convert to UTC for SGQL query; use inclusive bounds covering full days
-            var start = startDate.Value.Date.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            var end   = endDate.Value.Date.AddDays(1).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            // Treat date-only values as UTC for SGQL query; use inclusive bounds covering full days
+            var startUtc = DateTime.SpecifyKind(startDate.Value.Date, DateTimeKind.Utc);
+            var endUtcExclusive = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1), DateTimeKind.Utc);
+            var start = startUtc.ToString("yyyy-MM-dd HH:mm:ss");
+            var end   = endUtcExclusive.ToString("yyyy-MM-dd HH:mm:ss");
             filter += $" AND last_event_time>=TIMESTAMP \"{start}\"";
             filter += $" AND last_event_time<TIMESTAMP \"{end}\"";
         }

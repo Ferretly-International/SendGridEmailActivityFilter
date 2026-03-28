@@ -26,6 +26,9 @@ public class EmailActivityTool(SendGridService sendGrid)
 
         if (startDate is not null || endDate is not null)
         {
+            if (startDate is null || endDate is null)
+                return "Both startDate and endDate must be provided together for date range filtering.";
+
             if (!DateTime.TryParseExact(startDate, "yyyy-MM-dd",
                     System.Globalization.CultureInfo.InvariantCulture,
                     System.Globalization.DateTimeStyles.None, out var s))
@@ -39,8 +42,9 @@ public class EmailActivityTool(SendGridService sendGrid)
             if (e < s)
                 return "endDate must be on or after startDate.";
 
-            if ((e.Date - s.Date).TotalDays > (int)SendGridService.MaxDateRangeSpan.TotalDays)
-                return $"Date range cannot exceed {(int)SendGridService.MaxDateRangeSpan.TotalDays} days.";
+            var maxDays = (int)SendGridService.MaxDateRangeSpan.TotalDays;
+            if ((e.Date - s.Date).Days + 1 > maxDays)
+                return $"Date range cannot exceed {maxDays} days.";
 
             parsedStart = s;
             parsedEnd   = e;

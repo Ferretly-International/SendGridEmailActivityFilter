@@ -47,7 +47,7 @@ if (filterChoice == "Days to look back")
 }
 else if (filterChoice == "Date range")
 {
-    const int maxDays = 5;
+    var maxDays = (int)SendGridService.MaxDateRangeSpan.TotalDays;
     DateTime? parsedStart = null;
     DateTime? parsedEnd = null;
 
@@ -77,8 +77,8 @@ else if (filterChoice == "Date range")
             AnsiConsole.MarkupLine("[yellow]End date must be on or after start date.[/]");
             continue;
         }
-        var span = d.Date - parsedStart.Value.Date;
-        if (span.TotalDays > maxDays)
+        var inclusiveDays = (d.Date - parsedStart.Value.Date).Days + 1;
+        if (inclusiveDays > maxDays)
         {
             AnsiConsole.MarkupLine($"[yellow]Range cannot exceed {maxDays} days. Please enter an end date within {maxDays} days of {parsedStart.Value:yyyy-MM-dd}.[/]");
             continue;
