@@ -9,15 +9,15 @@ namespace SendGridEmailActivityFilter.Mcp.Tools;
 public class EmailActivityTool(SendGridService sendGrid)
 {
     [McpServerTool]
-    [Description("Query SendGrid email activity for a recipient email address. " +
-                 "Returns a table of recent messages including delivery status, " +
-                 "open and click counts. " +
-                 "Provide either 'days' for a rolling lookback, or both 'startDate' and 'endDate' " +
-                 "for a specific date range (maximum 5 days). Date range takes precedence when both are supplied.")]
+    [Description("Query SendGrid email activity. " +
+                 "Returns a table of messages including delivery status, open and click counts. " +
+                 "Either provide an email address (optionally with a days lookback) to query a specific recipient, " +
+                 "or provide startDate and endDate (maximum 5-day range) to retrieve all emails within a date range " +
+                 "regardless of recipient. Date range and email are mutually exclusive.")]
     public async Task<string> GetEmailActivity(
-        [Description("Recipient email address to look up")] string email,
+        [Description("Recipient email address to look up. Required unless startDate and endDate are provided — date range queries return all emails in the range regardless of recipient.")] string? email = null,
         [Description("Number of days to look back. Optional — omit for most recent messages up to the configured limit.")] int? days = null,
-        [Description("Start of date range to filter by, in yyyy-MM-dd format (e.g. '2025-01-01'). Must be used together with endDate. Range may not exceed 5 days.")] string? startDate = null,
+        [Description("Start of date range to filter by, in yyyy-MM-dd format (e.g. '2025-01-01'). Must be used together with endDate. Range may not exceed 5 days. When specified, email is not required.")] string? startDate = null,
         [Description("End of date range to filter by, in yyyy-MM-dd format (e.g. '2025-01-05'). Must be used together with startDate. Range may not exceed 5 days.")] string? endDate = null,
         CancellationToken cancellationToken = default)
     {
@@ -48,6 +48,11 @@ public class EmailActivityTool(SendGridService sendGrid)
 
             parsedStart = s;
             parsedEnd   = e;
+            email = null; // date range queries return all emails in the range
+        }
+        else if (string.IsNullOrWhiteSpace(email))
+        {
+            return "Either email or a date range (startDate + endDate) must be provided.";
         }
 
         EmailActivityResponse? result;
@@ -65,10 +70,11 @@ public class EmailActivityTool(SendGridService sendGrid)
         }
 
         if (result?.Messages is not { Length: > 0 } messages)
-            return $"No messages found for {email}.";
+            return email is not null ? $"No messages found for {email}." : "No messages found in that date range.";
 
         var sb = new StringBuilder();
-        sb.AppendLine($"Found {messages.Length} message(s) for {email}:");
+        var label = email is not null ? $"for {email}" : "in date range";
+        sb.AppendLine($"Found {messages.Length} message(s) {label}:");
         sb.AppendLine();
         sb.AppendLine("| Date | From | Subject | Status | Opens | Clicks | Message ID |");
         sb.AppendLine("|---|---|---|---|---|---|---|");

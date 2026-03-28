@@ -24,7 +24,7 @@ public class SendGridService
     public static readonly TimeSpan MaxDateRangeSpan = TimeSpan.FromDays(5);
 
     public async Task<EmailActivityResponse?> GetEmailActivityAsync(
-        string email,
+        string? email = null,
         int? days = null,
         DateTime? startDate = null,
         DateTime? endDate = null,
@@ -34,6 +34,9 @@ public class SendGridService
             throw new ArgumentException(
                 "Both startDate and endDate must be provided together when filtering by date range.",
                 startDate.HasValue ? nameof(endDate) : nameof(startDate));
+
+        if (!startDate.HasValue && string.IsNullOrWhiteSpace(email))
+            throw new ArgumentException("Either email or a date range must be provided.", nameof(email));
 
         if (startDate.HasValue && endDate.HasValue)
         {
@@ -46,7 +49,10 @@ public class SendGridService
                     $"Date range cannot exceed {(int)MaxDateRangeSpan.TotalDays} days.", nameof(endDate));
         }
 
-        var filter = $"to_email=\"{email}\"";
+        // Date range queries return all emails in the range; email filter is only applied otherwise
+        var filter = startDate.HasValue
+            ? string.Empty
+            : $"to_email=\"{email}\"";
 
         if (startDate.HasValue && endDate.HasValue)
         {
@@ -55,8 +61,7 @@ public class SendGridService
             var endUtcExclusive = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1), DateTimeKind.Utc);
             var start = startUtc.ToString("yyyy-MM-dd HH:mm:ss");
             var end   = endUtcExclusive.ToString("yyyy-MM-dd HH:mm:ss");
-            filter += $" AND last_event_time>=TIMESTAMP \"{start}\"";
-            filter += $" AND last_event_time<TIMESTAMP \"{end}\"";
+            filter = $"last_event_time>=TIMESTAMP \"{start}\" AND last_event_time<TIMESTAMP \"{end}\"";
         }
         else if (days.HasValue)
         {
