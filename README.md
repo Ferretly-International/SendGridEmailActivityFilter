@@ -1,13 +1,12 @@
 # SendGrid Email Activity Filter
 
-A .NET 8 console application and MCP server that query [SendGrid's Email Activity API](https://docs.sendgrid.com/api-reference/e-mail-activity/filter-messages-by-specific-parameters) for a given recipient address.
+A .NET 8 console application and MCP server that query [SendGrid's Email Activity API](https://docs.sendgrid.com/api-reference/e-mail-activity/filter-messages-by-specific-parameters) — either for a specific recipient address or for all emails within a date range.
 
 ## Features
 
 - Interactive ANSI console UI via **Spectre.Console**
 - MCP server — ask Claude Chat "pull up the email logs for soandso@there.com for the last week"
-- Queries SendGrid's `/v3/messages` endpoint filtered by `to_email`
-- Optional date filter: look back N days, or filter by a specific date range (max 5 days)
+- Query by recipient email (with optional N-day lookback), **or** retrieve all emails within a date range (max 5 days) — the two modes are mutually exclusive
 - Displays results in a colour-coded table (status, opens, clicks, date)
 - Configuration via `appsettings.json` (API key, result limit — gitignored, never committed)
 
@@ -106,7 +105,7 @@ Use a full absolute path. The executable is named `sendgrid-mcp.exe`.
 Restart Claude Desktop. You can then ask things like:
 - *"Pull up the email logs for user@example.com"*
 - *"Show me SendGrid activity for user@example.com for the last 7 days"*
-- *"Show me emails sent to user@example.com between 2025-01-01 and 2025-01-05"*
+- *"Show me all emails sent between 2025-01-01 and 2025-01-05"*
 
 ---
 
@@ -124,7 +123,6 @@ Both the console app and MCP server use the same config keys:
 ## Usage (console)
 
 ```
-Email address to query: user@example.com
 Date filter: [No filter (most recent)] [Days to look back] [Date range]
 ```
 
@@ -132,9 +130,9 @@ Select a filter mode:
 
 | Option | Behaviour |
 |--------|-----------|
-| **No filter** | Returns the most recent messages up to the configured limit |
-| **Days to look back** | Prompts for a number of days; returns messages since that many days ago |
-| **Date range** | Prompts for a start and end date (`yyyy-MM-dd`); range must be 5 days or fewer |
+| **No filter** | Prompts for an email address; returns that recipient's most recent messages up to the configured limit |
+| **Days to look back** | Prompts for an email address and a number of days; returns that recipient's messages since that many days ago |
+| **Date range** | Prompts for a start and end date (`yyyy-MM-dd`, max 5 days); returns **all** emails in that period regardless of recipient — no email address required |
 
 Results are displayed in a rounded table with columns:
 
