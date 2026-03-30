@@ -61,15 +61,10 @@ public class SendGridService
 
         if (startDate.HasValue && endDate.HasValue)
         {
-            // SendGrid SGQL only supports > and <, not >= and <=.
-            // Shift bounds by one second to achieve inclusive day coverage.
-            var startUtc       = DateTime.SpecifyKind(startDate.Value.Date.AddSeconds(-1), DateTimeKind.Utc);
-            var endUtcNextDay  = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1), DateTimeKind.Utc);
-            // Cap upper bound at UtcNow so we never send a future timestamp to SendGrid.
-            var endUtc = endUtcNextDay > DateTime.UtcNow ? DateTime.UtcNow : endUtcNextDay;
-            var start = startUtc.ToString("yyyy-MM-dd HH:mm:ss");
-            var end   = endUtc.ToString("yyyy-MM-dd HH:mm:ss");
-            filter = $"last_event_time>TIMESTAMP \"{start}\" AND last_event_time<TIMESTAMP \"{end}\"";
+            // SendGrid SGQL does not support two conditions on the same field.
+            // Apply only the start bound in the query; the end bound is enforced below on the results.
+            var startBound = DateTime.SpecifyKind(startDate.Value.Date.AddSeconds(-1), DateTimeKind.Utc);
+            filter = $"last_event_time>TIMESTAMP \"{startBound:yyyy-MM-dd HH:mm:ss}\"";
         }
         else if (days.HasValue)
         {
@@ -92,6 +87,18 @@ public class SendGridService
                 null,
                 response.StatusCode);
 
-        return JsonSerializer.Deserialize<EmailActivityResponse>(body);
+        var response = JsonSerializer.Deserialize<EmailActivityResponse>(body);
+
+        // Filter end date client-side: SGQL doesn't support two conditions on last_event_time.
+        if (endDate.HasValue && response?.Messages is { Length: > 0 } msgs)
+        {
+            var endBound = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1), DateTimeKind.Utc);
+            response = new EmailActivityResponse(
+                msgs.Where(m => DateTime.TryParse(m.LastEventTime, out var t)
+                             && t.ToUniversalTime() < endBound)
+                    .ToArray());
+        }
+
+        return response;
     }
 }
