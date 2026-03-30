@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -78,14 +79,14 @@ public class SendGridService
                   $"?limit={Math.Min(_limit, 1000)}" +
                   $"&query={Uri.EscapeDataString(filter)}";
 
-        var response = await _httpClient.GetAsync(url, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        var httpResponse = await _httpClient.GetAsync(url, cancellationToken);
+        var body = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
 
-        if (!response.IsSuccessStatusCode)
+        if (!httpResponse.IsSuccessStatusCode)
             throw new HttpRequestException(
-                $"SendGrid API returned {(int)response.StatusCode}: {body}",
+                $"SendGrid API returned {(int)httpResponse.StatusCode}: {body}",
                 null,
-                response.StatusCode);
+                httpResponse.StatusCode);
 
         var response = JsonSerializer.Deserialize<EmailActivityResponse>(body);
 
