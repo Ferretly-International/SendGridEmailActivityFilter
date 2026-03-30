@@ -79,7 +79,10 @@ public class EmailActivityTool(SendGridService sendGrid)
 
         var sb = new StringBuilder();
         var label = email is not null ? $"for {email}" : "in date range";
-        sb.AppendLine($"Found {messages.Length} message(s) {label}:");
+        var limitWarning = (parsedStart.HasValue && messages.Length == 1000)
+            ? " (limit reached — there may be more)"
+            : string.Empty;
+        sb.AppendLine($"Found {messages.Length} message(s) {label}{limitWarning}:");
         sb.AppendLine();
         sb.AppendLine("| Date | From | Subject | Status | Opens | Clicks | Message ID |");
         sb.AppendLine("|---|---|---|---|---|---|---|");

@@ -125,7 +125,10 @@ if (result?.Messages is not { Length: > 0 } messages)
 }
 
 var label = email is not null ? $"for [yellow]{Markup.Escape(email)}[/]" : "in date range";
-AnsiConsole.MarkupLine($"\nFound [green]{messages.Length}[/] message(s) {label}:\n");
+var limitWarning = (startDate.HasValue && messages.Length == 1000)
+    ? " [yellow](limit reached — there may be more)[/]"
+    : string.Empty;
+AnsiConsole.MarkupLine($"\nFound [green]{messages.Length}[/] message(s) {label}{limitWarning}:\n");
 
 var table = new Table()
     .Border(TableBorder.Rounded)
