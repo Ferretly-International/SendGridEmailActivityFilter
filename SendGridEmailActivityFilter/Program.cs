@@ -168,31 +168,15 @@ foreach (var msg in messages)
             : msg.LastEventTime
         : "";
 
-    if (isDateRange)
-    {
-        table.AddRow(
-            date,
-            Markup.Escape(msg.ToEmail ?? ""),
-            Markup.Escape(msg.FromEmail ?? ""),
-            Markup.Escape(msg.Subject ?? ""),
-            statusMarkup,
-            (msg.OpensCount ?? 0).ToString(),
-            (msg.ClicksCount ?? 0).ToString(),
-            Markup.Escape(msg.MsgId ?? "")
-        );
-    }
-    else
-    {
-        table.AddRow(
-            date,
-            Markup.Escape(msg.FromEmail ?? ""),
-            Markup.Escape(msg.Subject ?? ""),
-            statusMarkup,
-            (msg.OpensCount ?? 0).ToString(),
-            (msg.ClicksCount ?? 0).ToString(),
-            Markup.Escape(msg.MsgId ?? "")
-        );
-    }
+    var cells = new List<string> { date };
+    if (isDateRange) cells.Add(Markup.Escape(msg.ToEmail ?? ""));
+    cells.Add(Markup.Escape(msg.FromEmail ?? ""));
+    cells.Add(Markup.Escape(msg.Subject ?? ""));
+    cells.Add(statusMarkup);
+    cells.Add((msg.OpensCount ?? 0).ToString());
+    cells.Add((msg.ClicksCount ?? 0).ToString());
+    cells.Add(Markup.Escape(msg.MsgId ?? ""));
+    table.AddRow(cells.ToArray());
 }
 
 AnsiConsole.Write(table);
