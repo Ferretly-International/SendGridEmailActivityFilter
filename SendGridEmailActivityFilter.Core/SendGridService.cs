@@ -61,12 +61,13 @@ public class SendGridService
 
         if (startDate.HasValue && endDate.HasValue)
         {
-            // Treat date-only values as UTC for SGQL query; use inclusive bounds covering full days
+            // Treat date-only values as UTC for SGQL query; use inclusive bounds covering full days.
+            // Avoid adding a day beyond endDate as SendGrid rejects future timestamps.
             var startUtc = DateTime.SpecifyKind(startDate.Value.Date, DateTimeKind.Utc);
-            var endUtcExclusive = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1), DateTimeKind.Utc);
+            var endUtc   = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1).AddSeconds(-1), DateTimeKind.Utc);
             var start = startUtc.ToString("yyyy-MM-dd HH:mm:ss");
-            var end   = endUtcExclusive.ToString("yyyy-MM-dd HH:mm:ss");
-            filter = $"last_event_time>=TIMESTAMP \"{start}\" AND last_event_time<TIMESTAMP \"{end}\"";
+            var end   = endUtc.ToString("yyyy-MM-dd HH:mm:ss");
+            filter = $"last_event_time>=TIMESTAMP \"{start}\" AND last_event_time<=TIMESTAMP \"{end}\"";
         }
         else if (days.HasValue)
         {
