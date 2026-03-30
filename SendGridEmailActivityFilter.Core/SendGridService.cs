@@ -71,8 +71,12 @@ public class SendGridService
             filter += $" AND last_event_time>TIMESTAMP \"{cutoff}\"";
         }
 
+        // Date range queries always use the maximum limit — the range is fully enforced
+        // in SGQL so all returned messages are within the window.
+        var queryLimit = startDate.HasValue ? 1000 : Math.Min(_limit, 1000);
+
         var url = $"https://api.sendgrid.com/v3/messages" +
-                  $"?limit={Math.Min(_limit, 1000)}" +
+                  $"?limit={queryLimit}" +
                   $"&query={Uri.EscapeDataString(filter)}";
 
         var httpResponse = await _httpClient.GetAsync(url, cancellationToken);
