@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -62,10 +61,9 @@ public class SendGridService
 
         if (startDate.HasValue && endDate.HasValue)
         {
-            // SendGrid SGQL does not support two conditions on the same field.
-            // Apply only the start bound in the query; the end bound is enforced below on the results.
             var startBound = DateTime.SpecifyKind(startDate.Value.Date.AddSeconds(-1), DateTimeKind.Utc);
-            filter = $"last_event_time>TIMESTAMP \"{startBound:yyyy-MM-ddTHH:mm:ssZ}\"";
+            var endBound   = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1), DateTimeKind.Utc);
+            filter = $"last_event_time>TIMESTAMP \"{startBound:yyyy-MM-ddTHH:mm:ssZ}\" AND last_event_time<TIMESTAMP \"{endBound:yyyy-MM-ddTHH:mm:ssZ}\"";
         }
         else if (days.HasValue)
         {
@@ -73,13 +71,8 @@ public class SendGridService
             filter += $" AND last_event_time>TIMESTAMP \"{cutoff}\"";
         }
 
-        // For date range queries, always use the maximum limit: the end date is enforced
-        // client-side, so we need as many results as possible to avoid missing messages
-        // within the window that would otherwise be displaced by newer ones.
-        var queryLimit = startDate.HasValue ? 1000 : Math.Min(_limit, 1000);
-
         var url = $"https://api.sendgrid.com/v3/messages" +
-                  $"?limit={queryLimit}" +
+                  $"?limit={Math.Min(_limit, 1000)}" +
                   $"&query={Uri.EscapeDataString(filter)}";
 
         var httpResponse = await _httpClient.GetAsync(url, cancellationToken);
@@ -91,18 +84,6 @@ public class SendGridService
                 null,
                 httpResponse.StatusCode);
 
-        var response = JsonSerializer.Deserialize<EmailActivityResponse>(body);
-
-        // Filter end date client-side: SGQL doesn't support two conditions on last_event_time.
-        if (endDate.HasValue && response?.Messages is { Length: > 0 } msgs)
-        {
-            var endBound = DateTime.SpecifyKind(endDate.Value.Date.AddDays(1), DateTimeKind.Utc);
-            response = new EmailActivityResponse(
-                msgs.Where(m => DateTime.TryParse(m.LastEventTime, out var t)
-                             && t.ToUniversalTime() < endBound)
-                    .ToArray());
-        }
-
-        return response;
+        return JsonSerializer.Deserialize<EmailActivityResponse>(body);
     }
 }
