@@ -84,8 +84,18 @@ public class EmailActivityTool(SendGridService sendGrid)
             : string.Empty;
         sb.AppendLine($"Found {messages.Length} message(s) {label}{limitWarning}:");
         sb.AppendLine();
-        sb.AppendLine("| Date | From | Subject | Status | Opens | Clicks | Message ID |");
-        sb.AppendLine("|---|---|---|---|---|---|---|");
+
+        var isDateRange = parsedStart.HasValue;
+        if (isDateRange)
+        {
+            sb.AppendLine("| Date | To | From | Subject | Status | Opens | Clicks | Message ID |");
+            sb.AppendLine("|---|---|---|---|---|---|---|---|");
+        }
+        else
+        {
+            sb.AppendLine("| Date | From | Subject | Status | Opens | Clicks | Message ID |");
+            sb.AppendLine("|---|---|---|---|---|---|---|");
+        }
 
         foreach (var msg in messages)
         {
@@ -94,14 +104,29 @@ public class EmailActivityTool(SendGridService sendGrid)
                 ? dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
                 : msg.LastEventTime ?? "";
 
-            sb.AppendLine(
-                $"| {date} " +
-                $"| {Escape(msg.FromEmail)} " +
-                $"| {Escape(msg.Subject)} " +
-                $"| {msg.Status ?? "unknown"} " +
-                $"| {msg.OpensCount ?? 0} " +
-                $"| {msg.ClicksCount ?? 0} " +
-                $"| {Escape(msg.MsgId)} |");
+            if (isDateRange)
+            {
+                sb.AppendLine(
+                    $"| {date} " +
+                    $"| {Escape(msg.ToEmail)} " +
+                    $"| {Escape(msg.FromEmail)} " +
+                    $"| {Escape(msg.Subject)} " +
+                    $"| {msg.Status ?? "unknown"} " +
+                    $"| {msg.OpensCount ?? 0} " +
+                    $"| {msg.ClicksCount ?? 0} " +
+                    $"| {Escape(msg.MsgId)} |");
+            }
+            else
+            {
+                sb.AppendLine(
+                    $"| {date} " +
+                    $"| {Escape(msg.FromEmail)} " +
+                    $"| {Escape(msg.Subject)} " +
+                    $"| {msg.Status ?? "unknown"} " +
+                    $"| {msg.OpensCount ?? 0} " +
+                    $"| {msg.ClicksCount ?? 0} " +
+                    $"| {Escape(msg.MsgId)} |");
+            }
         }
 
         return sb.ToString();

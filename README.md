@@ -134,11 +134,26 @@ Select a filter mode:
 | **Days to look back** | Prompts for an email address and a number of days; returns that recipient's messages since that many days ago |
 | **Date range** | Prompts for a start and end date (`yyyy-MM-dd`, max 5 days); returns **all** emails in that period regardless of recipient — no email address required |
 
-Results are displayed in a rounded table with columns:
+Results are displayed in a rounded table. The columns differ slightly by mode:
+
+**Email / days lookback mode:**
 
 | Column | Description |
 |--------|-------------|
 | Date | Last event timestamp (local time) |
+| From | Sender address |
+| Subject | Email subject line |
+| Status | Colour-coded delivery status |
+| Opens | Number of open events |
+| Clicks | Number of click events |
+| Message ID | SendGrid message identifier |
+
+**Date range mode** (includes recipient column since results span multiple recipients):
+
+| Column | Description |
+|--------|-------------|
+| Date | Last event timestamp (local time) |
+| To | Recipient address |
 | From | Sender address |
 | Subject | Email subject line |
 | Status | Colour-coded delivery status |

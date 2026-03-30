@@ -130,10 +130,17 @@ var limitWarning = (startDate.HasValue && messages.Length == 1000)
     : string.Empty;
 AnsiConsole.MarkupLine($"\nFound [green]{messages.Length}[/] message(s) {label}{limitWarning}:\n");
 
+var isDateRange = startDate.HasValue;
+
 var table = new Table()
     .Border(TableBorder.Rounded)
     .BorderColor(Color.Grey)
-    .AddColumn(new TableColumn("[bold]Date[/]").Centered())
+    .AddColumn(new TableColumn("[bold]Date[/]").Centered());
+
+if (isDateRange)
+    table.AddColumn(new TableColumn("[bold]To[/]"));
+
+table
     .AddColumn(new TableColumn("[bold]From[/]"))
     .AddColumn(new TableColumn("[bold]Subject[/]"))
     .AddColumn(new TableColumn("[bold]Status[/]").Centered())
@@ -161,15 +168,31 @@ foreach (var msg in messages)
             : msg.LastEventTime
         : "";
 
-    table.AddRow(
-        date,
-        Markup.Escape(msg.FromEmail ?? ""),
-        Markup.Escape(msg.Subject ?? ""),
-        statusMarkup,
-        (msg.OpensCount ?? 0).ToString(),
-        (msg.ClicksCount ?? 0).ToString(),
-        Markup.Escape(msg.MsgId ?? "")
-    );
+    if (isDateRange)
+    {
+        table.AddRow(
+            date,
+            Markup.Escape(msg.ToEmail ?? ""),
+            Markup.Escape(msg.FromEmail ?? ""),
+            Markup.Escape(msg.Subject ?? ""),
+            statusMarkup,
+            (msg.OpensCount ?? 0).ToString(),
+            (msg.ClicksCount ?? 0).ToString(),
+            Markup.Escape(msg.MsgId ?? "")
+        );
+    }
+    else
+    {
+        table.AddRow(
+            date,
+            Markup.Escape(msg.FromEmail ?? ""),
+            Markup.Escape(msg.Subject ?? ""),
+            statusMarkup,
+            (msg.OpensCount ?? 0).ToString(),
+            (msg.ClicksCount ?? 0).ToString(),
+            Markup.Escape(msg.MsgId ?? "")
+        );
+    }
 }
 
 AnsiConsole.Write(table);
