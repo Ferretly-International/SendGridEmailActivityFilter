@@ -65,14 +65,12 @@ public class SendGridService
             // SendGrid SGQL does not support two conditions on the same field.
             // Apply only the start bound in the query; the end bound is enforced below on the results.
             var startBound = DateTime.SpecifyKind(startDate.Value.Date.AddSeconds(-1), DateTimeKind.Utc);
-            filter = $"last_event_time>TIMESTAMP \"{startBound:yyyy-MM-dd HH:mm:ss}\"";
+            filter = $"last_event_time>\"{startBound:yyyy-MM-ddTHH:mm:ssZ}\"";
         }
         else if (days.HasValue)
         {
-            var cutoff = DateTime.UtcNow.AddDays(-days.Value)
-                                        .ToString("yyyy-MM-dd HH:mm:ss");
-            // SendGrid SGQL: > operator, TIMESTAMP keyword, "yyyy-MM-dd HH:mm:ss" format
-            filter += $" AND last_event_time>TIMESTAMP \"{cutoff}\"";
+            var cutoff = DateTime.UtcNow.AddDays(-days.Value).ToString("yyyy-MM-ddTHH:mm:ssZ");
+            filter += $" AND last_event_time>\"{cutoff}\"";
         }
 
         var url = $"https://api.sendgrid.com/v3/messages" +
