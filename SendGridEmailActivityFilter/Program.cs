@@ -15,25 +15,84 @@ var limit = int.TryParse(limitStr, out var parsedLimit) ? parsedLimit : 20;
 
 AnsiConsole.Write(new FigletText("SendGrid Activity").Color(Color.CornflowerBlue));
 
-var email = AnsiConsole.Ask<string>("[grey]Email address to query:[/] ");
-
-if (string.IsNullOrWhiteSpace(email))
-{
-    AnsiConsole.MarkupLine("[red]No email address provided.[/]");
-    return;
-}
-
 int? days = null;
-// AnsiConsole.Ask<string> rejects empty input; TextPrompt with AllowEmpty() lets user press Enter to skip
-var daysInput = AnsiConsole.Prompt(
-    new TextPrompt<string>("[grey]Days to look back (leave blank for all recent):[/] ")
-        .AllowEmpty());
-if (!string.IsNullOrWhiteSpace(daysInput))
+DateTime? startDate = null;
+DateTime? endDate = null;
+
+var filterChoice = AnsiConsole.Prompt(
+    new SelectionPrompt<string>()
+        .Title("[grey]Date filter:[/]")
+        .AddChoices("No filter (most recent)", "Days to look back", "Date range"));
+
+string? email = null;
+
+if (filterChoice == "Date range")
 {
-    if (int.TryParse(daysInput.Trim(), out var parsedDays) && parsedDays > 0)
-        days = parsedDays;
-    else
-        AnsiConsole.MarkupLine("[yellow]Invalid days value — querying without date filter.[/]");
+    var maxDays = (int)SendGridService.MaxDateRangeSpan.TotalDays;
+    DateTime? parsedStart = null;
+    DateTime? parsedEnd = null;
+
+    while (parsedStart is null)
+    {
+        var input = AnsiConsole.Ask<string>("[grey]Start date (yyyy-MM-dd):[/] ");
+        if (DateTime.TryParseExact(input.Trim(), "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var d))
+            parsedStart = d;
+        else
+            AnsiConsole.MarkupLine("[yellow]Invalid date — use yyyy-MM-dd format.[/]");
+    }
+
+    while (parsedEnd is null)
+    {
+        var input = AnsiConsole.Ask<string>("[grey]End date (yyyy-MM-dd):[/] ");
+        if (!DateTime.TryParseExact(input.Trim(), "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var d))
+        {
+            AnsiConsole.MarkupLine("[yellow]Invalid date — use yyyy-MM-dd format.[/]");
+            continue;
+        }
+        if (d < parsedStart.Value)
+        {
+            AnsiConsole.MarkupLine("[yellow]End date must be on or after start date.[/]");
+            continue;
+        }
+        var inclusiveDays = (d.Date - parsedStart.Value.Date).Days + 1;
+        if (inclusiveDays > maxDays)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Range cannot exceed {maxDays} days. Please enter an end date within {maxDays} days of {parsedStart.Value:yyyy-MM-dd}.[/]");
+            continue;
+        }
+        parsedEnd = d;
+    }
+
+    startDate = parsedStart;
+    endDate   = parsedEnd;
+}
+else
+{
+    // Email is required when not using a date range
+    email = AnsiConsole.Ask<string>("[grey]Email address to query:[/] ");
+    if (string.IsNullOrWhiteSpace(email))
+    {
+        AnsiConsole.MarkupLine("[red]No email address provided.[/]");
+        return;
+    }
+
+    if (filterChoice == "Days to look back")
+    {
+        var daysInput = AnsiConsole.Prompt(
+            new TextPrompt<string>("[grey]Days to look back:[/] ")
+                .AllowEmpty());
+        if (!string.IsNullOrWhiteSpace(daysInput))
+        {
+            if (int.TryParse(daysInput.Trim(), out var parsedDays) && parsedDays > 0)
+                days = parsedDays;
+            else
+                AnsiConsole.MarkupLine("[yellow]Invalid days value — querying without date filter.[/]");
+        }
+    }
 }
 
 EmailActivityResponse? result = null;
@@ -42,13 +101,13 @@ var apiErrored = false;
 await AnsiConsole.Status()
     .Spinner(Spinner.Known.Dots)
     .SpinnerStyle(Style.Parse("cornflowerblue"))
-    .StartAsync($"Querying activity for [yellow]{Markup.Escape(email)}[/]...", async _ =>
+    .StartAsync($"Querying activity for [yellow]{Markup.Escape(email ?? "date range")}[/]...", async _ =>
     {
         try
         {
             using var httpClient = new HttpClient();
             var service = new SendGridService(httpClient, apiKey, limit);
-            result = await service.GetEmailActivityAsync(email, days);
+            result = await service.GetEmailActivityAsync(email, days, startDate, endDate);
         }
         catch (HttpRequestException ex)
         {
@@ -61,11 +120,15 @@ if (apiErrored) return;
 
 if (result?.Messages is not { Length: > 0 } messages)
 {
-    AnsiConsole.MarkupLine("[yellow]No messages found for that address.[/]");
+    AnsiConsole.MarkupLine("[yellow]No messages found.[/]");
     return;
 }
 
-AnsiConsole.MarkupLine($"\nFound [green]{messages.Length}[/] message(s) for [yellow]{Markup.Escape(email)}[/]:\n");
+var label = email is not null ? $"for [yellow]{Markup.Escape(email)}[/]" : "in date range";
+var limitWarning = (startDate.HasValue && messages.Length == 1000)
+    ? " [yellow](limit reached — there may be more)[/]"
+    : string.Empty;
+AnsiConsole.MarkupLine($"\nFound [green]{messages.Length}[/] message(s) {label}{limitWarning}:\n");
 
 var table = new Table()
     .Border(TableBorder.Rounded)
