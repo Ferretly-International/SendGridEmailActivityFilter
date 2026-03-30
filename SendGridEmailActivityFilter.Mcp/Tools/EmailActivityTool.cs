@@ -84,8 +84,14 @@ public class EmailActivityTool(SendGridService sendGrid)
             : string.Empty;
         sb.AppendLine($"Found {messages.Length} message(s) {label}{limitWarning}:");
         sb.AppendLine();
-        sb.AppendLine("| Date | From | Subject | Status | Opens | Clicks | Message ID |");
-        sb.AppendLine("|---|---|---|---|---|---|---|");
+
+        var isDateRange = parsedStart.HasValue;
+        sb.AppendLine(isDateRange
+            ? "| Date | To | From | Subject | Status | Opens | Clicks | Message ID |"
+            : "| Date | From | Subject | Status | Opens | Clicks | Message ID |");
+        sb.AppendLine(isDateRange
+            ? "|---|---|---|---|---|---|---|---|"
+            : "|---|---|---|---|---|---|---|");
 
         foreach (var msg in messages)
         {
@@ -94,14 +100,15 @@ public class EmailActivityTool(SendGridService sendGrid)
                 ? dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
                 : msg.LastEventTime ?? "";
 
-            sb.AppendLine(
-                $"| {date} " +
-                $"| {Escape(msg.FromEmail)} " +
-                $"| {Escape(msg.Subject)} " +
-                $"| {msg.Status ?? "unknown"} " +
-                $"| {msg.OpensCount ?? 0} " +
-                $"| {msg.ClicksCount ?? 0} " +
-                $"| {Escape(msg.MsgId)} |");
+            var cells = new List<string> { date };
+            if (isDateRange) cells.Add(Escape(msg.ToEmail));
+            cells.Add(Escape(msg.FromEmail));
+            cells.Add(Escape(msg.Subject));
+            cells.Add(msg.Status ?? "unknown");
+            cells.Add((msg.OpensCount ?? 0).ToString());
+            cells.Add((msg.ClicksCount ?? 0).ToString());
+            cells.Add(Escape(msg.MsgId));
+            sb.AppendLine($"| {string.Join(" | ", cells)} |");
         }
 
         return sb.ToString();
